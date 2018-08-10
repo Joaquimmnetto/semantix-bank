@@ -1,0 +1,279 @@
+---
+title: "semantix-test"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+require(ggplot2)
+require(data.table)
+require(party)
+require(varImp)
+```
+
+## Introdução
+
+
+## Perguntas
+
+1. Qual profissão tem mais tendência a fazer um empréstimo? De qual tipo?
+2. Fazendo uma relação entre número de contatos e sucesso da campanha quais
+são os pontos relevantes a serem observados?
+3. Baseando-se nos resultados de adesão desta campanha qual o número médio e
+o máximo de ligações que você indica para otimizar a adesão?
+4. O resultado da campanha anterior tem relevância na campanha atual?
+5. Qual o fator determinante para que o banco exija um seguro de crédito?
+6. Quais são as características mais proeminentes de um cliente que possua
+empréstimo imobiliário?
+
+
+## Carga dos dados
+
+```{r}
+
+bank = fread("datasets/bank-full.csv",
+             colClasses = c(job='factor', marital='factor', education='factor',
+                            default='factor', housing='factor', loan='factor',
+                            contact='factor', day='factor', month='factor',
+                            poutcome='factor', y='factor'))
+```
+
+## Resumo dos dados
+
+```{r}
+  summary(bank)
+```
+
+Não parece haver muitos outliers ou dados danificados, com a exceção de algumas colunas. Consideramos como outliers, dados aonde há uma grande diferença entre Min~1º quartil ou Max~3ºquartil.
+
+* duration: É comum que algumas ligações durem muito mais do que o normal, não temos motivos para descartar estes dados ou considerá-los seriamente anômalos.
+
+* campaign: Parece excessivo que clientes tenham sido contactados até 63 vezes durante uma mesma campanha. Esse valor pode ser um possível erro.
+
+* pdays: Também não é incomum de se esperar que tenha passado um longo tempo entre ligações de diferentes campanhas. O fato de que a maioria dos valores é '-1', que é um rotulo para 'sem contato prévio', distorce essa distribuição.
+
+* previous: Possui um problema similar ao campo 'pdays', já que 'sem contato prévio' corresponde a 0.
+
+É importante que prestemos atenção nestes detalhes destes dados em análises futuras.
+
+### Importância das _features_ 
+
+Antes de partirmos para responder as perguntas e verificarmos as relações entre os dados, é interessante verificarmos quais destes dados são mais relevantes na escolha do cliente, já que uma coluna relacionar-se com um resultado positivo, não necessariamente quer dizer que àquela coluna é a causa deste resultado.
+
+```{r}
+#forest = cforest(y~., data=bank[1:45211], controls = cforest_unbiased(ntree=20))
+load("rf_20_trees.RData")
+```
+
+Os valores abaixo mostram a importância de cada uma das variáveis, baseada na diferença entre a AUC calculada com essa variável presente ou ausente. Vemos que todas as variáveis tem alguma importância, com a variável de duração da ligação sendo a mais importante, seguida pelo mês no qual a ligação é realizada.
+
+```{r}
+sort(varimpAUC(forest), decreasing=TRUE)
+```
+
+### Pergunta 1:
+
+**Qual profissão tem mais tendência a fazer um empréstimo? De qual tipo?**
+
+Para responder essa pergunta, vamos primeiro analisar as colunas de profissões (job) e de resultados dos empréstimos (y)
+
+```{r}
+ggplot(bank) + geom_bar(aes(x = job, fill = y), stat = 'count') +
+             theme(axis.text.x = element_text(angle = 90, hjust = 1))
+
+```
+
+Intuitivamente, vemos alguns tipos de empregados são bem mais contatados do que outros, como por exemplo, trabalhadores de escritório(blue-collar), gerentes, e técnicos. Também vemos que a taxa de aceitação aparenta ser baixa no geral, o que é esperado para marketing de massa.
+
+Abaixo vemos com mais detalhes qual a taxa de aceitação para cada profissão:
+
+```{r}
+job.perc = bank[, .(.N, 
+          yes.perc=sum(ifelse(y=='yes',1, 0))*100/.N, 
+          no.perc=sum(ifelse(y=='no',1, 0))*100/.N
+          ), by=.(job)]
+
+ggplot(job.perc) + 
+    geom_bar(aes(x = job, y = yes.perc),stat = 'identity') +
+    geom_hline(aes(yintercept = mean(job.perc$yes.perc), color = 'mean')) +
+    theme(axis.text.x = element_text(angle = 90, hjust = 1))
+
+```
+
+Neste gráfico, fica claro que estudantes têm uma maior tendência de fazer empréstimos, seguidos por pessoas aposentadas, apesar dos mesmos não serem tão contatados pelo banco. Já as demografias mais contatadas (trabalhadores de escritório, gerentes e técnicos), apresentam taxas de aceitação na média, ou abaixo da média.
+
+A segunda pergunta no enunciado, 'de qual tipo?', infere que precisamos saber o tipo de empréstimo contratado. Contudo, não temos tais informações nos nossos dados. 
+
+
+### Pergunta 2:
+
+**Fazendo uma relação entre número de contatos e sucesso da campanha quais
+são os pontos relevantes a serem observados?**
+
+Similarmente a pergunta anterior, começaremos com uma demonstração dos dados relacionados
+
+```{r}
+ggplot(bank) + geom_bar(aes(x = factor(campaign), fill = y), stat = 'count') +
+             theme(axis.text.x = element_text(angle = 90, hjust = 1))
+```
+
+Como constatamos anteriormente, vemos que há grupos de clientes que foram contatados em grande quantidade. Contudo, eles representam um grupo muito pequeno, com pouca relevância estatística. Também temos que considerar a baixa taxa de adesão dos usuários no geral (~11.7%). Para evitar influência destes grupos com poucos dados na nossa análise, usaremos somente grupos que possuam ao menos 100 usuários. 
+
+```{r}
+campaign.perc = bank[, .(.N, 
+          yes.perc=sum(ifelse(y=='yes',1, 0))*100/.N, 
+          no.perc=sum(ifelse(y=='no',1, 0))*100/.N
+          ), by=.(campaign)]
+```
+
+Como resultado, o gráfico a seguir mostra o percentual de negócios fechados para diferentes quantidades de ligações recebidas. 
+
+```{r}
+ggplot(campaign.perc[N >= 100]) + geom_bar(aes(x = campaign, y = yes.perc),stat = 'identity') +
+    theme(axis.text.x = element_text(angle = 90, hjust = 1))
+```
+
+No gráfico, vemos que há uma tendência de quem recebe menos ligações, fechar mais contratos. Isso é confirmado pela correlação de pearson entre número de ligações e taxas de aceite, que é negativa, com valor de `-0.7`.
+```{r}
+cor.test(campaign.perc$campaign, campaign.perc$yes.perc)
+```
+
+### Pergunta 3:
+
+**Baseando-se nos resultados de adesão desta campanha qual o número médio e
+o máximo de ligações que você indica para otimizar a adesão?**
+
+Ainda baseado nos dados da pergunta anterior, as pessoas que recebem mais ligações ainda fecham contratos. Entretanto, estas ligações poderiam estar sendo utilizadas para ligar para outros potenciais clientes, que teriam mais chance de fechar contrato nas primeiras ligações. Então, a não ser em caso de exaustão de clientes viáveis, é interessante sempre tentar contactar novos clientes. 
+Então, a média de ligações por cliente deveria ser próxima de 1, já que novos contatos possuem uma chanse consideravelmente maior de sucesso. Uma quantidade máxima de ligações é dependente, de como dito acima, se houve uma exaustão de clientes viáveis para contatar, neste caso é valido ligar novamente para clientes, mas caso contrário é sempre interessante continuar a buscar clientes novos.
+
+Um melhor detalhamento dos resultados obtidos se encontra na tabela abaixo.
+
+```{r}
+knitr::kable(setorder(campaign.perc[N >= 100], 'campaign'))
+```
+
+
+### Pergunta 4:
+
+**O resultado da campanha anterior tem relevância na campanha atual?**
+
+Para respondermos essa pergunta, primeiro precisamos definir o que é relevância. Definieremos que alguma variável relacionada a campanha anterior é relevante se ela impactar de maneira significativa o resultado da campanha atual. Para determinarmos se esse impacto existe, relacionaremos as variáveis associadas a campanha anterior (pdays, previous, poutcome), com o resultado da campanha atual (y).
+
+#### pdays:
+
+Para verificarmos se há relação entre o número de dias desde do último contato e o resultado da campanha atual, compararemos o valor de pdays para resultados positivos e resultados negativos. Levaremos em consideração somente usuários que foram contatados em campanhas anteriores.
+
+A comparação será realizada através de um teste t. Valores de p maiores ou iguais a 0.05 indicam que não há diferença significativa entre os grupos.
+
+```{r}
+t.test(bank[pdays != -1 & y=='yes']$pdays, bank[pdays != -1 & y=='no']$pdays)
+```
+
+Vemos que há sim uma diferença significativa neste caso. Pessoas que fecharam negócio tendem a ter sido contatadas a menos tempo pelo banco. Entretanto, a quantidade de dias desde do ultimo contato é alta em ambos os casos, com 192 dias para clientes que fecharam negócio vs. 234 dias para clientes que não fecharam, em média.
+
+
+#### previous:
+
+Aqui aplicaremos a mesma lógica usada em pdays para verificar se a quantidade de ligações recebida tem alguma associação com clientes que fecharam ou não negócio.
+
+```{r}
+t.test(bank[previous > 0 & y=='yes']$previous, bank[previous > 0 & y=='no']$previous)
+```
+
+Neste caso, não aparenta haver diferença significativa entre a quantidade de contatos recebidos em outras campanhas por clientes que fecharam ou não negócio. O que indica que a quantidade de ligações recebidas anteriormente não é um diferencial real neste caso.
+
+
+#### poutcome:
+Como neste caso estamos comparando duas variáveis discretas, não podemos nos utilizar de testes t. Aqui compararemos o resultado da campanha anterior em dois grupos de clientes: os que fecharam negócio nesta campanha ou não. Isso será feito através da diferença da concentração dos valores possíveis de poutcome nos dois grupos.
+
+Aqui usaremos somente os valores 'failure' e 'success' de poutcome, já que eles são os únicos com uma semântica clara o suficiente para inferirmos resultados, além de indicarem que este usuário já participou de campanhas anteriores.
+
+```{r}
+      sort(
+          prop.table(summary(bank[poutcome %in% c("failure", "success") & y=='yes']$poutcome)) -
+          prop.table(summary(bank[poutcome %in% c("failure", "success") & y=='no']$poutcome)), 
+        decreasing = TRUE) * 100
+
+```
+Aqui vemos que usuários que aceitaram a oferta nesta campanha tem muito mais chances de já terem a aceitado anteriormente, com 50% a mais de aceites anteriores por parte destes usuários. Realizaremos este experimento novamente, mas agora na 'direção oposta', ou seja, verificando a diferença de aceite atual baseado em aceites anteriores.
+
+```{r}
+      sort(
+          prop.table(summary(bank[poutcome=='success']$y)) -
+          prop.table(summary(bank[poutcome=='failure']$y)), 
+        decreasing = TRUE) * 100
+
+```
+
+Assim confirmamos a tendência mostrada no teste anterior. Usuários que já aceitaram uma campanha anterior apresentam 52% a mais de aceite da campanha atual.
+
+Assim vemos que uma quantidade menor de dias desde do último contato, e principalmente o fato de um usuário já ter aceitado uma campanha anterior são altamente relevantes no resultado da campanha atual.
+
+
+### Pergunta 5:
+
+**Qual o fator determinante para que o banco exija um seguro de crédito?**
+
+Não temos nos dados informações disponíveis quanto a se o cliente pagou o empréstimo ou não, então não podemos dizer com precisão o risco gerado por esse cliente. Mas segundo o senso comum, acredita-se podemos usar as variáveis abaixo para indicar possíveis mau pagadores.
+
+* default: Um cliente com dívidas vencidas provavelmente tem dificuldades em pagar novas
+* balance: Clientes sem dinheiro acumulado (saldo negativo) também podem ter dificuldade para pagar dividas
+* housing, loan: Em conjunto com os outros campos, podemos indicar se um cliente têm dividas em excesso. Por exemplo, um cliente com loan==TRUE e balance < 0 provavelmente está passando por dificuldades financeiras e não deve ser um bom pagador.
+
+
+### Pergunta 6:
+
+**Quais são as características mais proeminentes de um cliente que possua
+empréstimo imobiliário?**
+
+Primeiro, temos que dividir nossos usuários em clientes com e sem empréstimo imobiliário. Definiremos as caracteristicas proeminentes dos clientes com emprestimo, a partir da comparação destes com os clientes sem empréstimo
+
+```{r}
+  cli.imo = bank[housing=='yes']
+  other.cli = bank[housing=='no']
+```
+
+Os dois conjuntos são grandes o suficiente para realizarmos comparações válidas, com `r nrow(cli.imo)` entradas para clientes com empréstimo e `r nrow(other.cli)` para clientes sem empréstimo. O mínimo necessário para fazermos comparações confiáveis seria de 381 (5% de intervalo de confiança, 95% de nível de confiança), calculado usando o link  a seguir: https://www.surveysystem.com/sscalc.htm#one
+
+A partir disso compararemos as variáveis de cada um dos conjuntos, a partir de testes t, no caso de valores continuos, e subtraindo as porcentagens da presença de cada um dos tipos de elementos (com emprestimo - sem emprestímo) no caso de variáveis discretas.
+
+Abaixo destacamos as principais descobertas a partir do descrito:
+
+* Clientes com empréstimo imobiliário são mais novos do que clientes sem empréstimo, em média (38.8 anos x 43.1 anos).
+
+* Clientes com empréstimo imobiliário têm mais chances de serem trabalhadores de escritório, com 14% a mais desses trabalhadores em comparação a clientes sem empréstimo
+
+* Clientes com empréstimo imobiliário tem mais chances de possuírem educação secundária (10% a mais)
+
+* Clientes com empréstimo imobiliário tem saldo bancário menor do que seus contrapartes, em média ($1175 x $1596)
+
+* Estes clientes têm uma quantidade de empréstimo levemente maior do que seus contrapartes (3% a mais)
+
+* Estranhamente, estes clientes tendem a receber mais ligações no mês de maio (40% a mais), e menos no mês de agosto(21% a menos), quando comparado com seus contrapartes.
+
+* Finalmente estes clientes tendem a aceitar menos ofertas (9% a menos).
+
+
+Uma descrição completa dos resultados dos testes encontram-se abaixo.
+
+```{r}
+for(name in names(cli.imo)){
+  print(name)
+  if(class(cli.imo[,get(name)]) != 'factor'){
+    result = t.test(cli.imo[,get(name)], other.cli[,get(name)])
+    print(sprintf("t=%.3f, p=%.3f, imo_mean(%s)=%.3f, noimo_mean(%s)=%.3f",
+                 result$statistic, result$p.value, 
+                 name, result$estimate[1], 
+                 name, result$estimate[2]))
+  }else{
+    print(
+      sort(
+        prop.table(summary(cli.imo[,get(name)])) - prop.table(summary(other.cli[,get(name)])), decreasing = TRUE) * 100
+      )
+  }
+  print("")
+}
+
+```
+
+
