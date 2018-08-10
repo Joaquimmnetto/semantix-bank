@@ -38,13 +38,33 @@ bank = fread("datasets/bank-full.csv",
                             poutcome='factor', y='factor'))
 ```
 
-## Resumo dos dados
+## Descrição dos dados:
+
+* _age_: idade do cliente (numeric)
+* _job_ : tipo de emprego (categorical: "admin.","unknown","unemployed", "management", "housemaid", "entrepreneur", "student", "blue-collar", "self-employed", "retired", "technician", "services") 
+* _marital_ : estado de relacionamento (casado/solteiro/divorciado) (categorical: "married", "divorced", "single"; nota: "divorced" pode ser divorciado(a) ou viúvo(a))
+* _education_: nível de educação (categorical: "unknown", "secondary", "primary", "tertiary")
+* _default_: se tem dívidas atrasadas (binary: "yes", "no")
+* _balance_: saldo anual, em euros (numeric) 
+* _housing_: se tem empréstimo imobiliário (binary: "yes", "no")
+* _loan_: se tem empréstimo pessoal (binary: "yes", "no")
+* _contact_: Meio usado para contato (categorical: "unknown", "telephone", "cellular") 
+* _day_: Dia do mês do último contato (numeric)
+* _month_: Mês do último contato (categorical: "jan", "feb", "mar", ..., "nov", "dec")
+* _duration_: duração do último contato, em segundos (numeric)
+* _campaign_: número de contatos feitos nesta campanha para este cliente (numeric, includes last contact)
+* _pdays_: número de dias que passaram desde do último contato ao cliente em uma campanha anterior (numeric, -1 significa que não houve contato anterior)
+* _previous_: número de contatos feitos antes dessa campanha a este cliente (numeric)
+* _poutcome_: resultado deste usuário na ultima campanha de marketing (categorical: "unknown","other","failure","success")
+
+
+## Resumo dos dados:
 
 ```{r}
   summary(bank)
 ```
 
-Não parece haver muitos outliers ou dados danificados, com a exceção de algumas colunas. Consideramos como outliers, dados aonde há uma grande diferença entre Min~1º quartil ou Max~3ºquartil.
+Não parece haver muitos outliers ou dados danificados, com a exceção de algumas colunas. Consideramos como outliers, dados aonde há uma grande diferença entre Min e 1º quartil ou Max e 3ºquartil.
 
 * duration: É comum que algumas ligações durem muito mais do que o normal, não temos motivos para descartar estes dados ou considerá-los seriamente anômalos.
 

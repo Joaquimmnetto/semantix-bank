@@ -147,8 +147,29 @@ $(document).ready(function () {
                             contact='factor', day='factor', month='factor',
                             poutcome='factor', y='factor'))</code></pre>
 </div>
+<div id="descricao-dos-dados" class="section level2">
+<h2>Descrição dos dados:</h2>
+<ul>
+<li><em>age</em>: idade do cliente (numeric)</li>
+<li><em>job</em> : tipo de emprego (categorical: “admin.”,“unknown”,“unemployed”, “management”, “housemaid”, “entrepreneur”, “student”, “blue-collar”, “self-employed”, “retired”, “technician”, “services”)</li>
+<li><em>marital</em> : estado de relacionamento (casado/solteiro/divorciado) (categorical: “married”, “divorced”, “single”; nota: “divorced” pode ser divorciado(a) ou viúvo(a))</li>
+<li><em>education</em>: nível de educação (categorical: “unknown”, “secondary”, “primary”, “tertiary”)</li>
+<li><em>default</em>: se tem dívidas atrasadas (binary: “yes”, “no”)</li>
+<li><em>balance</em>: saldo anual, em euros (numeric)</li>
+<li><em>housing</em>: se tem empréstimo imobiliário (binary: “yes”, “no”)</li>
+<li><em>loan</em>: se tem empréstimo pessoal (binary: “yes”, “no”)</li>
+<li><em>contact</em>: Meio usado para contato (categorical: “unknown”, “telephone”, “cellular”)</li>
+<li><em>day</em>: Dia do mês do último contato (numeric)</li>
+<li><em>month</em>: Mês do último contato (categorical: “jan”, “feb”, “mar”, …, “nov”, “dec”)</li>
+<li><em>duration</em>: duração do último contato, em segundos (numeric)</li>
+<li><em>campaign</em>: número de contatos feitos nesta campanha para este cliente (numeric, includes last contact)</li>
+<li><em>pdays</em>: número de dias que passaram desde do último contato ao cliente em uma campanha anterior (numeric, -1 significa que não houve contato anterior)</li>
+<li><em>previous</em>: número de contatos feitos antes dessa campanha a este cliente (numeric)</li>
+<li><em>poutcome</em>: resultado deste usuário na ultima campanha de marketing (categorical: “unknown”,“other”,“failure”,“success”)</li>
+</ul>
+</div>
 <div id="resumo-dos-dados" class="section level2">
-<h2>Resumo dos dados</h2>
+<h2>Resumo dos dados:</h2>
 <pre class="r"><code>  summary(bank)</code></pre>
 <pre><code>##       age                 job           marital          education    
 ##  Min.   :18.00   blue-collar:9732   divorced: 5207   primary  : 6851  
@@ -182,7 +203,7 @@ $(document).ready(function () {
 ##  3rd Qu.: -1.0   3rd Qu.:  0.0000                              
 ##  Max.   :871.0   Max.   :275.0000                              
 ## </code></pre>
-<p>Não parece haver muitos outliers ou dados danificados, com a exceção de algumas colunas. Consideramos como outliers, dados aonde há uma grande diferença entre Min~1º quartil ou Max~3ºquartil.</p>
+<p>Não parece haver muitos outliers ou dados danificados, com a exceção de algumas colunas. Consideramos como outliers, dados aonde há uma grande diferença entre Min e 1º quartil ou Max e 3ºquartil.</p>
 <ul>
 <li><p>duration: É comum que algumas ligações durem muito mais do que o normal, não temos motivos para descartar estes dados ou considerá-los seriamente anômalos.</p></li>
 <li><p>campaign: Parece excessivo que clientes tenham sido contactados até 63 vezes durante uma mesma campanha. Esse valor pode ser um possível erro.</p></li>
