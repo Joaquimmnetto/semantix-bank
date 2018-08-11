@@ -9,6 +9,7 @@ require(ggplot2)
 require(data.table)
 require(party)
 require(varImp)
+require(reticulate)
 ```
 
 ## Introdução
@@ -74,6 +75,7 @@ Não parece haver muitos outliers ou dados danificados, com a exceção de algum
 
 * previous: Possui um problema similar ao campo 'pdays', já que 'sem contato prévio' corresponde a 0.
 
+*y: Vemos que o desbalanceamento no campo representando nossa _label_ é bem significativo, com apenas 8.5% das entradas sendo 'yes', e o restante sendo 'no'.
 É importante que prestemos atenção nestes detalhes destes dados em análises futuras.
 
 ### Importância das _features_ 
@@ -95,17 +97,19 @@ sort(varimpAUC(forest), decreasing=TRUE)
 
 **Qual profissão tem mais tendência a fazer um empréstimo? De qual tipo?**
 
-Para responder essa pergunta, vamos primeiro analisar as colunas de profissões (job) e de resultados dos empréstimos (y)
+
+#### Análise numérica
+
+Para responder essa pergunta, vamos primeiro analisar as colunas de profissões (job) e de resultados dos empréstimos (y), e a aceitação de cada um deles.
 
 ```{r}
 ggplot(bank) + geom_bar(aes(x = job, fill = y), stat = 'count') +
              theme(axis.text.x = element_text(angle = 90, hjust = 1))
-
 ```
 
 Intuitivamente, vemos alguns tipos de empregados são bem mais contatados do que outros, como por exemplo, trabalhadores de escritório(blue-collar), gerentes, e técnicos. Também vemos que a taxa de aceitação aparenta ser baixa no geral, o que é esperado para marketing de massa.
 
-Abaixo vemos com mais detalhes qual a taxa de aceitação para cada profissão:
+Abaixo veremos com mais detalhes qual a taxa de aceitação para cada profissão:
 
 ```{r}
 job.perc = bank[, .(.N, 
@@ -120,9 +124,80 @@ ggplot(job.perc) +
 
 ```
 
-Neste gráfico, fica claro que estudantes têm uma maior tendência de fazer empréstimos, seguidos por pessoas aposentadas, apesar dos mesmos não serem tão contatados pelo banco. Já as demografias mais contatadas (trabalhadores de escritório, gerentes e técnicos), apresentam taxas de aceitação na média, ou abaixo da média.
+Neste gráfico, fica claro que estudantes fazem um número maior de empréstimos, seguidos por pessoas aposentadas, apesar dos mesmos não serem tão contatados pelo banco, com estes respondendo nossa questão.
 
-A segunda pergunta no enunciado, 'de qual tipo?', infere que precisamos saber o tipo de empréstimo contratado. Contudo, não temos tais informações nos nossos dados. 
+
+#### Análise preditiva
+
+Como refoço a primeira parte, tentaramos aqui prever se um empréstimo foi realizado ou não usando apenas profissões. Para podermos verificar quais profissões são mais relevantes, usaremos o algoritimo de aprendizado _Random Forest_.
+
+##### Preprocessamento
+
+Para descobrir qual profissão tem maior relevância, precisamos desdobrar nossa coluna de profissões em várias features *one hot*, necessárias para o Random Forest processar corretamente, já que árvores de decisão só lidam com dados ordenados.
+
+```{r}
+oh_encoder = onehot(data.table(job=bank$job), max_levels = 20)
+jobs_dt = data.table(predict(oh_encoder, data.table(job=bank$job)))
+jobs_dt$y = bank$y
+```
+
+##### Encontrando melhor modelo
+
+Nosso objetivo aqui não é encontrar um modelo viável para prever profissões, mas sim encontrar o modelo com a melhor precisão para aceitação do empréstimo ('sim'), já que estamos buscando que profissões tendem a aceitar a oferta.
+
+```{r}
+require(reticulate) #Reticulate is an API that enables the use of python modules on R
+ensemble = import('sklearn.ensemble') #In this case, I'm using scikit-learn.
+metrics = import('sklearn.metrics')
+
+n_estimators = seq.int(from=5, to=50, by=1)
+oob_precision = c()
+
+for(n_estimator in n_estimators) {
+  model = ensemble$RandomForestClassifier(n_estimators=as.integer(n_estimator), class_weight='balanced', oob_score=TRUE, random_state=as.integer(42))
+  model = model$fit(jobs_dt[, 1:12], as.matrix(jobs_dt[, 13])[, 1])
+  oob_decision = data.table(
+                    apply(
+                      model$oob_decision_function_, 1, FUN=which.max))
+  names(oob_decision) = "pred"
+  oob_decision$pred = as.integer(oob_decision$pred) == 2 #TRUE == yes, FALSE == no
+  oob_decision$real = as.integer(jobs_dt$y) == 2
+  
+  oob_score = metrics$precision_score(oob_decision$real, oob_decision$pred) #precision for 'yes'
+  
+  oob_precision <- c(oob_precision, oob_score) #precision for 'yes'
+  
+}
+oob_precision <- setNames(oob_precision, n_estimators)
+```
+
+##### Treinando o melhor modelo:
+```{r}
+opt_n_estimator = n_estimators[which.max(oob_precision)]
+model =  ensemble$RandomForestClassifier(n_estimators=as.integer(opt_n_estimator),   class_weight='balanced', random_state=as.integer(42))
+model$fit(jobs_dt[, 1:12], as.matrix(jobs_dt[, 13])[, 1])
+
+```
+
+##### Importância de cada profissão:
+
+```{r}
+importances = model$feature_importances_
+importances = data.table(importance = importances,
+                         job = factor(gsub('job=', '', names(jobs_dt[, 1:12]))))
+```
+
+##### Resultados
+
+```{r}
+ggplot(importances) + 
+  geom_bar(aes(x=job,y=importance), stat='identity') +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+```
+
+No gráfico acima, vemos que trabalhadores manuais, estudantes e aposentados são os tipos de trabalho com maior importância na hora de se prever o resultado. Entretanto, isso não implica diretamente que estes trabalhos são os que têm maior tendência de fazer um empréstimo, já que eles podem influenciar a árvore de decisão tendo valor 1 (o que implica que esse trabalho tem tendência de aceitar a oferta) ou tendo valor 0 ( implicando que esse trabalho tem tendência de não aceitar a oferta), nos seus nós.
+
+Analisando a estrutura de nossas árvores de decisão, vemos que o primeiro caso (valor 1), é valido para estudantes e aposentados, enquanto o segundo caso (valor 0), é valido para trabalhadores manuais. Isso implica que estudantes e aposentados têm maior tendência de aceitar a oferta, enquanto trabalhadores manuais têm menos chance de aceitá-la.
 
 
 ### Pergunta 2:
@@ -154,6 +229,7 @@ ggplot(campaign.perc[N >= 100]) + geom_bar(aes(x = campaign, y = yes.perc),stat 
 ```
 
 No gráfico, vemos que há uma tendência de quem recebe menos ligações, fechar mais contratos. Isso é confirmado pela correlação de pearson entre número de ligações e taxas de aceite, que é negativa, com valor de `-0.7`.
+
 ```{r}
 cor.test(campaign.perc$campaign, campaign.perc$yes.perc)
 ```
@@ -238,7 +314,7 @@ Não temos nos dados informações disponíveis quanto a se o cliente pagou o em
 
 * default: Um cliente com dívidas vencidas provavelmente tem dificuldades em pagar novas
 * balance: Clientes sem dinheiro acumulado (saldo negativo) também podem ter dificuldade para pagar dividas
-* housing, loan: Em conjunto com os outros campos, podemos indicar se um cliente têm dividas em excesso. Por exemplo, um cliente com loan==TRUE e balance < 0 provavelmente está passando por dificuldades financeiras e não deve ser um bom pagador.
+* housing, loan: Em conjunto com os outros campos, podemos indicar se um cliente têm dividas em excesso. Por exemplo, um cliente com um empresitmo pessoal e saldo negativo provavelmente está passando por dificuldades financeiras e não deve ser um bom pagador.
 
 
 ### Pergunta 6:
@@ -274,7 +350,7 @@ Abaixo destacamos as principais descobertas a partir do descrito:
 * Finalmente estes clientes tendem a aceitar menos ofertas (9% a menos).
 
 
-Uma descrição completa dos resultados dos testes encontram-se abaixo.
+Uma descrição completa dos resultados dos testes encontra-se abaixo.
 
 ```{r}
 for(name in names(cli.imo)){
