@@ -7,9 +7,10 @@ output: html_document
 knitr::opts_chunk$set(echo = TRUE)
 require(ggplot2)
 require(data.table)
-require(party)
-require(varImp)
+# require(party)
+# require(varImp)
 require(reticulate)
+require(onehot)
 ```
 
 ## Introdução
@@ -78,20 +79,6 @@ Não parece haver muitos outliers ou dados danificados, com a exceção de algum
 *y: Vemos que o desbalanceamento no campo representando nossa _label_ é bem significativo, com apenas 8.5% das entradas sendo 'yes', e o restante sendo 'no'.
 É importante que prestemos atenção nestes detalhes destes dados em análises futuras.
 
-### Importância das _features_ 
-
-Antes de partirmos para responder as perguntas e verificarmos as relações entre os dados, é interessante verificarmos quais destes dados são mais relevantes na escolha do cliente, já que uma coluna relacionar-se com um resultado positivo, não necessariamente quer dizer que àquela coluna é a causa deste resultado.
-
-```{r}
-#forest = cforest(y~., data=bank[1:45211], controls = cforest_unbiased(ntree=20))
-load("rf_20_trees.RData")
-```
-
-Os valores abaixo mostram a importância de cada uma das variáveis, baseada na diferença entre a AUC calculada com essa variável presente ou ausente. Vemos que todas as variáveis tem alguma importância, com a variável de duração da ligação sendo a mais importante, seguida pelo mês no qual a ligação é realizada.
-
-```{r}
-sort(varimpAUC(forest), decreasing=TRUE)
-```
 
 ### Pergunta 1:
 
@@ -119,7 +106,6 @@ job.perc = bank[, .(.N,
 
 ggplot(job.perc) + 
     geom_bar(aes(x = job, y = yes.perc),stat = 'identity') +
-    geom_hline(aes(yintercept = mean(job.perc$yes.perc), color = 'mean')) +
     theme(axis.text.x = element_text(angle = 90, hjust = 1))
 
 ```
@@ -162,11 +148,11 @@ for(n_estimator in n_estimators) {
   names(oob_decision) = "pred"
   oob_decision$pred = as.integer(oob_decision$pred) == 2 #TRUE == yes, FALSE == no
   oob_decision$real = as.integer(jobs_dt$y) == 2
-  
+
   oob_score = metrics$precision_score(oob_decision$real, oob_decision$pred) #precision for 'yes'
-  
+
   oob_precision <- c(oob_precision, oob_score) #precision for 'yes'
-  
+
 }
 oob_precision <- setNames(oob_precision, n_estimators)
 ```
@@ -190,7 +176,7 @@ importances = data.table(importance = importances,
 ##### Resultados
 
 ```{r}
-ggplot(importances) + 
+ggplot(importances) +
   geom_bar(aes(x=job,y=importance), stat='identity') +
   theme(axis.text.x = element_text(angle = 90, hjust = 1))
 ```
@@ -209,6 +195,7 @@ Similarmente a pergunta anterior, começaremos com uma demonstração dos dados 
 
 ```{r}
 ggplot(bank) + geom_bar(aes(x = factor(campaign), fill = y), stat = 'count') +
+             labs(x="Qtd. de ligações", y="Total de aceites", fill="Aceitou?") +
              theme(axis.text.x = element_text(angle = 90, hjust = 1))
 ```
 
@@ -224,8 +211,10 @@ campaign.perc = bank[, .(.N,
 Como resultado, o gráfico a seguir mostra o percentual de negócios fechados para diferentes quantidades de ligações recebidas. 
 
 ```{r}
-ggplot(campaign.perc[N >= 100]) + geom_bar(aes(x = campaign, y = yes.perc),stat = 'identity') +
-    theme(axis.text.x = element_text(angle = 90, hjust = 1))
+ggplot(campaign.perc[N >= 100], aes(x = campaign, y = yes.perc)) + 
+    geom_bar(stat = 'identity') +
+    geom_smooth(color='black', method='lm') +
+    labs(x="Qtd. de ligações", y="% de aceites")
 ```
 
 No gráfico, vemos que há uma tendência de quem recebe menos ligações, fechar mais contratos. Isso é confirmado pela correlação de pearson entre número de ligações e taxas de aceite, que é negativa, com valor de `-0.7`.
@@ -234,15 +223,34 @@ No gráfico, vemos que há uma tendência de quem recebe menos ligações, fecha
 cor.test(campaign.perc$campaign, campaign.perc$yes.perc)
 ```
 
+Novamente para explicitar melhor as diferenças, 
+
+```{r}
+ggplot(campaign.perc[N >= 100]) + 
+    geom_bar(aes(x = campaign, y = scale(yes.perc)),stat = 'identity') +
+    labs(x="Qtd. de ligações", y="% de aceites (escalada pela média)")
+```
+
+
 ### Pergunta 3:
 
 **Baseando-se nos resultados de adesão desta campanha qual o número médio e
 o máximo de ligações que você indica para otimizar a adesão?**
 
-Ainda baseado nos dados da pergunta anterior, as pessoas que recebem mais ligações ainda fecham contratos. Entretanto, estas ligações poderiam estar sendo utilizadas para ligar para outros potenciais clientes, que teriam mais chance de fechar contrato nas primeiras ligações. Então, a não ser em caso de exaustão de clientes viáveis, é interessante sempre tentar contactar novos clientes. 
-Então, a média de ligações por cliente deveria ser próxima de 1, já que novos contatos possuem uma chanse consideravelmente maior de sucesso. Uma quantidade máxima de ligações é dependente, de como dito acima, se houve uma exaustão de clientes viáveis para contatar, neste caso é valido ligar novamente para clientes, mas caso contrário é sempre interessante continuar a buscar clientes novos.
+Ainda baseado nos dados da pergunta anterior, as pessoas que recebem mais ligações ainda fecham contratos. Entretanto, estas ligações poderiam estar sendo utilizadas para ligar para outros potenciais clientes, que teriam mais chance de fechar contrato nas primeiras ligações. Então, a não ser em caso de exaustão de clientes viáveis, é interessante sempre tentar contactar novos clientes, com a média de ligações por cliente devendo ser próxima de 1.
+
+
+Como vimos acima, é recomendado contactar a maior quantidade de clientes possível, então devemos manter a quantidade média de ligações baixa. Para estabelecer uma quantidade máximo de ligações, construímos o gráfico abaixo. Ele mostra os mesmos dados do gráfico da pergunta anterior, mas agora com os valores do eixo y escaladas em razão da sua distância para a média. O valor 0 representa a média, e cada unidade representa um desvio padrão. Vemos que 5 ligações é o último valor para o qual a porcentagem de aceites se mantêm acima da média. Com isso, estabelecemos 5 como um valor razoável para a quantidade máxima de ligações.
+
+
+```{r}
+ggplot(campaign.perc[N >= 100]) + 
+    geom_bar(aes(x = campaign, y = scale(yes.perc)),stat = 'identity') +
+    labs(x="Qtd. de ligações", y="% de aceites (escalada pela média)")
+```
 
 Um melhor detalhamento dos resultados obtidos se encontra na tabela abaixo.
+
 
 ```{r}
 knitr::kable(setorder(campaign.perc[N >= 100], 'campaign'))
@@ -253,9 +261,11 @@ knitr::kable(setorder(campaign.perc[N >= 100], 'campaign'))
 
 **O resultado da campanha anterior tem relevância na campanha atual?**
 
+#### Análise numérica
+
 Para respondermos essa pergunta, primeiro precisamos definir o que é relevância. Definieremos que alguma variável relacionada a campanha anterior é relevante se ela impactar de maneira significativa o resultado da campanha atual. Para determinarmos se esse impacto existe, relacionaremos as variáveis associadas a campanha anterior (pdays, previous, poutcome), com o resultado da campanha atual (y).
 
-#### pdays:
+##### pdays:
 
 Para verificarmos se há relação entre o número de dias desde do último contato e o resultado da campanha atual, compararemos o valor de pdays para resultados positivos e resultados negativos. Levaremos em consideração somente usuários que foram contatados em campanhas anteriores.
 
@@ -268,7 +278,7 @@ t.test(bank[pdays != -1 & y=='yes']$pdays, bank[pdays != -1 & y=='no']$pdays)
 Vemos que há sim uma diferença significativa neste caso. Pessoas que fecharam negócio tendem a ter sido contatadas a menos tempo pelo banco. Entretanto, a quantidade de dias desde do ultimo contato é alta em ambos os casos, com 192 dias para clientes que fecharam negócio vs. 234 dias para clientes que não fecharam, em média.
 
 
-#### previous:
+##### previous:
 
 Aqui aplicaremos a mesma lógica usada em pdays para verificar se a quantidade de ligações recebida tem alguma associação com clientes que fecharam ou não negócio.
 
@@ -279,7 +289,7 @@ t.test(bank[previous > 0 & y=='yes']$previous, bank[previous > 0 & y=='no']$prev
 Neste caso, não aparenta haver diferença significativa entre a quantidade de contatos recebidos em outras campanhas por clientes que fecharam ou não negócio. O que indica que a quantidade de ligações recebidas anteriormente não é um diferencial real neste caso.
 
 
-#### poutcome:
+##### poutcome:
 Como neste caso estamos comparando duas variáveis discretas, não podemos nos utilizar de testes t. Aqui compararemos o resultado da campanha anterior em dois grupos de clientes: os que fecharam negócio nesta campanha ou não. Isso será feito através da diferença da concentração dos valores possíveis de poutcome nos dois grupos.
 
 Aqui usaremos somente os valores 'failure' e 'success' de poutcome, já que eles são os únicos com uma semântica clara o suficiente para inferirmos resultados, além de indicarem que este usuário já participou de campanhas anteriores.
@@ -303,7 +313,112 @@ Aqui vemos que usuários que aceitaram a oferta nesta campanha tem muito mais ch
 
 Assim confirmamos a tendência mostrada no teste anterior. Usuários que já aceitaram uma campanha anterior apresentam 52% a mais de aceite da campanha atual.
 
-Assim vemos que uma quantidade menor de dias desde do último contato, e principalmente o fato de um usuário já ter aceitado uma campanha anterior são altamente relevantes no resultado da campanha atual.
+
+#### Análise Preditiva
+
+No caso da análise preditiva, consideraremos uma variável relevante, se ela prevê corretamente o resultado da campanha atual. Para isso, compararemos tanto o impacto do da variável (poutcome) representando o resultado da campanha anterior quando comparado com outras variáveis, como comparar os resultados da campanha anterior entre si (success x failure).
+
+Para tal, construiremos novamente um modelo de Florestas aleatórias para nos permitir a análise do impacto das variáveis no resultado.
+
+##### Preprocessamento
+
+Similarmente ao feito na pergunta 1, precisamos transformar nossas variáveis categóricas que não são ordernáveis para o formato 'onehot'. Transformaremos variáveis categóricas que são ordenáveis para inteiros.
+
+```{r}
+rf_bank = copy(bank)
+rf_bank$day = as.integer(as.character(rf_bank$day))
+rf_bank$month = sapply(rf_bank$month, function(x) grep(paste("(?i)", x, sep=""), month.abb))
+
+oh_encoder = onehot(rf_bank[,1:16], max_levels = 100)
+
+rf_bank = data.table(predict(oh_encoder, rf_bank[,1:16]))
+rf_bank$y = bank$y
+```
+
+##### Encontrando melhor modelo
+
+Nosso objetivo aqui não é encontrar um modelo viável para realizar previsões reais, mas sim encontrar o modelo com a melhor precisão para aceitação do empréstimo ('sim'), já que estamos buscando que profissões tendem a aceitar a oferta. O modelo escolhido poderá sofrer de _overfitting_, mas isso não é o problema, que que queremos que ele descreva nossos dados o mais precisamente possível.
+
+Para aliviar com o fato de que há um forte desbalanço nos nossos alvos de predição (coluna y), balancearemos a importância de cada classe ('yes' e 'no') pelo inverso da sua frequência. Para medir as métricas necessárias para comparação entre modelos, usaremos a técnica OOB, específica ao Random Forest.
+
+```{r}
+
+best_rf <- function(X, y, metric_fun, n_estimators) {
+  require(reticulate) #Reticulate is an API that enables the use of python modules on R
+  ensemble = import('sklearn.ensemble') #In this case, I'm using scikit-learn.
+  
+  oob_results = c()
+  
+  for(n_estimator in n_estimators) {
+    model = ensemble$RandomForestClassifier(n_estimators=as.integer(n_estimator), class_weight='balanced', oob_score=TRUE, random_state=as.integer(42))
+    model = model$fit(X, as.matrix(y)[, 1])
+    oob_decision = data.table(
+                      apply(
+                        model$oob_decision_function_, 1, FUN=which.max))
+    names(oob_decision) = "pred"
+    oob_decision$pred = as.integer(oob_decision$pred) == 2 #TRUE == yes, FALSE == no
+    oob_decision$real = as.integer(y$y) == 2
+  
+    oob_score = metric_fun(oob_decision$real, oob_decision$pred)
+    oob_results <- c(oob_results, oob_score)
+  
+  }
+  
+  oob_results <- setNames(oob_results, n_estimators)
+  return(oob_results)
+}
+
+```
+
+
+##### Treinando o melhor modelo:
+
+```{r}
+  rf_feature_importance <- function(X, y, metric_fun, n_estimators){
+    ensemble = import('sklearn.ensemble')
+    
+    oob_metrics = best_rf(X, y, metric_fun, n_estimators)  
+    
+    opt_n_estimator = n_estimators[which.max(oob_metrics)]
+    model =  ensemble$RandomForestClassifier(n_estimators=as.integer(opt_n_estimator),   class_weight='balanced', random_state=as.integer(42))
+    model$fit(X, as.matrix(y)[, 1])
+    importances = model$feature_importances_
+    
+    importances = data.table(importance = importances,
+                           feature = names(X))
+    return(importances)
+}
+
+```
+
+
+##### Importância de cada profissão:
+
+```{r}
+  metrics = import('sklearn.metrics')
+  X = 
+  y = 
+  metric_fun = 
+  n_estimators = 
+  
+  importance = rf_feature_importance(X=rf_bank[, 1:40], 
+                                     y=rf_bank[, 41], 
+                                     n_estimators=seq.int(from=10, to=100, by=5), 
+                                     metric_fun=metrics$precision_score)
+```
+
+#### Resultados
+
+Removemos a feature de duração para melhor legibilidade do gráfico, já que ela, naturalmente é fortemente relacionada com o resultado, visto que pessoas que fecham negócio passam mais tempo para dar de conta dos detalhes.
+
+```{r}
+ggplot(importances[feature!='duration']) +
+  geom_bar(aes(x=reorder(feature, -importance), y=importance), stat='identity') +
+  labs(x='Variáveis', y='Escore de importância') +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+```
+
+Vemos que os principais fatores que influenciam o usuário são seu saldo atual, sua idade, e a data (mes/dia) do contato. Em uma escala menor, vemos que fatores como: quantidade de contatos (campaign), explorada na Pergunta 3; contatos anteriores em sucedidos (poutcome=sucess), e a quantidade de dias desde do último contato (pdays). Os dois ultimos são relacionados com a nossa pergunta, e juntamente com o descoberto na análise numérica  nos mostram que uma *quantidade menor de dias desde do último contato*, e principalmente *o fato de um usuário já ter aceitado uma campanha anterior* são relevantes no resultado da campanha atual.
 
 
 ### Pergunta 5:
