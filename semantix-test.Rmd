@@ -84,106 +84,80 @@ Não parece haver muitos outliers ou dados danificados, com a exceção de algum
 
 **Qual profissão tem mais tendência a fazer um empréstimo? De qual tipo?**
 
-
-#### Análise numérica
-
-Para responder essa pergunta, vamos primeiro analisar as colunas de profissões (job) e de resultados dos empréstimos (y), e a aceitação de cada um deles.
+Antes de iniciar a análise, vamos olhar a frequência de diferentes tipos de profissão nos nossos dados.
 
 ```{r}
-ggplot(bank) + geom_bar(aes(x = job, fill = y), stat = 'count') +
-             theme(axis.text.x = element_text(angle = 90, hjust = 1))
+ggplot(bank) + geom_bar(aes(x = job, fill = ifelse(
+                                            loan=='yes',
+                                            ifelse(housing=='yes','Both','Loan'),
+                                            ifelse(housing=='yes','Housing','None'))
+                            ), stat = 'count') +
+              labs(x='Tipo de Emprego', y='Quantidade', fill='Tipo de empréstimo') +
+              theme(axis.text.x = element_text(angle = 90, hjust = 1))
+
 ```
 
-Intuitivamente, vemos alguns tipos de empregados são bem mais contatados do que outros, como por exemplo, trabalhadores de escritório(blue-collar), gerentes, e técnicos. Também vemos que a taxa de aceitação aparenta ser baixa no geral, o que é esperado para marketing de massa.
+Vemos alguns tipos de empregados são bem mais presentes nos dados do que outros, como por exemplo, trabalhadores braçais(blue-collar), gerentes, e técnicos. Também vemos que não podemos inferir efetivamente quais profissões têm mais empréstimos a partir desta vizualização. Contudo, já vemos que empréstimos imobiliários são bem mais frequentes que empréstimos pessoais. Para compensar os problemas listados, iremos olhar as taxas (em porcentagem) de empréstimo pessoal para cada profissão. Essa lógica será repetida em todas as análises desta pergunta.
 
-Abaixo veremos com mais detalhes qual a taxa de aceitação para cada profissão:
+Para responder a pergunta, relacionaremos a coluna de profissões, com cada uma das colunas relacionadas a empréstimo: loan (empréstimo pessoal), housing(empréstimo habitacional) e uma coluna a ser criada, any_loan, que nos ajudará a descobrir quais profissões pegam empréstimos de qualquer um dos dois tipos.
+
+Realizaremos a análise associando a taxa de empréstimo para cada coluna relacionada a empréstimos com cada uma das profissões listadas em jobs.
+
+#### loan (empréstimo pessoal):
 
 ```{r}
-job.perc = bank[, .(.N, 
-          yes.perc=sum(ifelse(y=='yes',1, 0))*100/.N, 
-          no.perc=sum(ifelse(y=='no',1, 0))*100/.N
-          ), by=.(job)]
+aggregate_ratios <- function(dt, column, by_column){
+  percs = dt[, .(.N, 
+            yes.perc=sum(ifelse(get(column)=='yes',1, 0))*100/.N, 
+            no.perc=sum(ifelse(get(column)=='no',1, 0))*100/.N
+            ), by=.(by.column=get(by_column))]
+  return(percs)
+}
+```
 
-ggplot(job.perc) + 
-    geom_bar(aes(x = job, y = yes.perc),stat = 'identity') +
+```{r}
+loan_job_ratios = aggregate_ratios(bank, 'loan', 'job')
+ggplot(loan_job_ratios) + 
+    geom_bar(aes(x = reorder(by.column, -yes.perc), y = yes.perc),stat = 'identity') +
+    labs(x='Tipo de emprego', y='% com emp. pessoal') +
+    theme(axis.text.x = element_text(angle = 90, hjust = 1))
+```
+
+Olhando as taxas no gráfico acima, Vemos que empreendedores possuem a maior quantidade de empréstimos pessoais, seguidos por trabalhadores que fornecem serviços, administradores, trabalhadores de fábrica e técnicos.
+
+#### housing (empréstimo imobiliário):
+
+```{r}
+housing_job_ratios = aggregate_ratios(bank, 'housing', 'job')
+ggplot(housing_job_ratios) + 
+    geom_bar(aes(x = reorder(by.column,-yes.perc), y = yes.perc),stat = 'identity') +
+    labs(x='Tipo de emprego', y='% com emp. imobiliário') +
     theme(axis.text.x = element_text(angle = 90, hjust = 1))
 
 ```
 
-Neste gráfico, fica claro que estudantes fazem um número maior de empréstimos, seguidos por pessoas aposentadas, apesar dos mesmos não serem tão contatados pelo banco, com estes respondendo nossa questão.
+Já para empréstimos imobiliários, fica evidente que a maioria dos clientes (55%) possuem um, com trabalhadores braçais liderando a lista, com mais de 70% destes tendo empréstimo imobiliário pendente. Após estes, vemos trabalhadores de serviços, administradores, empresários e técnicos, todos com mais de 50% de aparição de empréstimos imobiliários.
 
 
-#### Análise preditiva
+#### Qualquer Empréstimo
 
-Como refoço a primeira parte, tentaramos aqui prever se um empréstimo foi realizado ou não usando apenas profissões. Para podermos verificar quais profissões são mais relevantes, usaremos o algoritimo de aprendizado _Random Forest_.
-
-##### Preprocessamento
-
-Para descobrir qual profissão tem maior relevância, precisamos desdobrar nossa coluna de profissões em várias features *one hot*, necessárias para o Random Forest processar corretamente, já que árvores de decisão só lidam com dados ordenados.
+Aqui devemos criar uma coluna para verificar se um usuário fez um tipo qualquer de empréstimo, chamaremos ela de any_loan. Essa coluna terá dois valores: 'yes' e 'no', que funcionam de maneira similar as outras colunas de empréstimo.
 
 ```{r}
-oh_encoder = onehot(data.table(job=bank$job), max_levels = 20)
-jobs_dt = data.table(predict(oh_encoder, data.table(job=bank$job)))
-jobs_dt$y = bank$y
+bank$any_loan = ifelse((bank$loan == 'yes') | (bank$housing == 'yes'), 'yes', 'no')
 ```
-
-##### Encontrando melhor modelo
-
-Nosso objetivo aqui não é encontrar um modelo viável para prever profissões, mas sim encontrar o modelo com a melhor precisão para aceitação do empréstimo ('sim'), já que estamos buscando que profissões tendem a aceitar a oferta.
 
 ```{r}
-require(reticulate) #Reticulate is an API that enables the use of python modules on R
-ensemble = import('sklearn.ensemble') #In this case, I'm using scikit-learn.
-metrics = import('sklearn.metrics')
 
-n_estimators = seq.int(from=5, to=50, by=1)
-oob_precision = c()
-
-for(n_estimator in n_estimators) {
-  model = ensemble$RandomForestClassifier(n_estimators=as.integer(n_estimator), class_weight='balanced', oob_score=TRUE, random_state=as.integer(42))
-  model = model$fit(jobs_dt[, 1:12], as.matrix(jobs_dt[, 13])[, 1])
-  oob_decision = data.table(
-                    apply(
-                      model$oob_decision_function_, 1, FUN=which.max))
-  names(oob_decision) = "pred"
-  oob_decision$pred = as.integer(oob_decision$pred) == 2 #TRUE == yes, FALSE == no
-  oob_decision$real = as.integer(jobs_dt$y) == 2
-
-  oob_score = metrics$precision_score(oob_decision$real, oob_decision$pred) #precision for 'yes'
-
-  oob_precision <- c(oob_precision, oob_score) #precision for 'yes'
-
-}
-oob_precision <- setNames(oob_precision, n_estimators)
+any_loan_job_ratios = aggregate_ratios(bank, 'any_loan', 'job')
+ggplot(any_loan_job_ratios) + 
+    geom_bar(aes(x = reorder(by.column,-yes.perc), y = yes.perc),stat = 'identity') +
+    labs(x='Tipo de emprego', y='% com emp. qualquer empréstimo') +
+    theme(axis.text.x = element_text(angle = 90, hjust = 1))
+bank$any_loan = NULL
 ```
 
-##### Treinando o melhor modelo:
-```{r}
-opt_n_estimator = n_estimators[which.max(oob_precision)]
-model =  ensemble$RandomForestClassifier(n_estimators=as.integer(opt_n_estimator),   class_weight='balanced', random_state=as.integer(42))
-model$fit(jobs_dt[, 1:12], as.matrix(jobs_dt[, 13])[, 1])
-
-```
-
-##### Importância de cada profissão:
-
-```{r}
-importances = model$feature_importances_
-importances = data.table(importance = importances,
-                         job = factor(gsub('job=', '', names(jobs_dt[, 1:12]))))
-```
-
-##### Resultados
-
-```{r}
-ggplot(importances) +
-  geom_bar(aes(x=job,y=importance), stat='identity') +
-  theme(axis.text.x = element_text(angle = 90, hjust = 1))
-```
-
-No gráfico acima, vemos que trabalhadores manuais, estudantes e aposentados são os tipos de trabalho com maior importância na hora de se prever o resultado. Entretanto, isso não implica diretamente que estes trabalhos são os que têm maior tendência de fazer um empréstimo, já que eles podem influenciar a árvore de decisão tendo valor 1 (o que implica que esse trabalho tem tendência de aceitar a oferta) ou tendo valor 0 ( implicando que esse trabalho tem tendência de não aceitar a oferta), nos seus nós.
-
-Analisando a estrutura de nossas árvores de decisão, vemos que o primeiro caso (valor 1), é valido para estudantes e aposentados, enquanto o segundo caso (valor 0), é valido para trabalhadores manuais. Isso implica que estudantes e aposentados têm maior tendência de aceitar a oferta, enquanto trabalhadores manuais têm menos chance de aceitá-la.
+O resultado aqui é bastante similar aos empréstimos imobiliários, o que faz sentido, visto que entre empréstimos pessoais (16% do total) e imobiliários (55% do total) o segundo é bem mais frequente. Assim como nos empréstimos imobiliários, a proissão que mais realiza qualquer tipo de empréstimo é a de trabalhadores braçais, seguidos por trabalhadores de serviços, administradores, empresários e técnicos.
 
 
 ### Pergunta 2:
@@ -195,11 +169,11 @@ Similarmente a pergunta anterior, começaremos com uma demonstração dos dados 
 
 ```{r}
 ggplot(bank) + geom_bar(aes(x = factor(campaign), fill = y), stat = 'count') +
-             labs(x="Qtd. de ligações", y="Total de aceites", fill="Aceitou?") +
+             labs(x="Qtd. de ligações", y="Total de contatos", fill="Aceitou?") +
              theme(axis.text.x = element_text(angle = 90, hjust = 1))
 ```
 
-Como constatamos anteriormente, vemos que há grupos de clientes que foram contatados em grande quantidade. Contudo, eles representam um grupo muito pequeno, com pouca relevância estatística. Também temos que considerar a baixa taxa de adesão dos usuários no geral (~11.7%). Para evitar influência destes grupos com poucos dados na nossa análise, usaremos somente grupos que possuam ao menos 100 usuários. 
+Vemos que há grupos de clientes que foram contatados em grande quantidade. Contudo, eles representam um grupo muito pequeno. Esses grupos pequenos podem gerar _bias_ na análise, então, para evitar influência destes grupos na nossa análise, usaremos somente grupos que possuam ao menos 100 usuários. 
 
 ```{r}
 campaign.perc = bank[, .(.N, 
@@ -211,26 +185,18 @@ campaign.perc = bank[, .(.N,
 Como resultado, o gráfico a seguir mostra o percentual de negócios fechados para diferentes quantidades de ligações recebidas. 
 
 ```{r}
-ggplot(campaign.perc[N >= 100], aes(x = campaign, y = yes.perc)) + 
+campaign_y_ratios = aggregate_ratios(bank, 'y', 'campaign')
+ggplot(campaign_y_ratios[N >= 100], aes(x = by.column, y = yes.perc)) + 
     geom_bar(stat = 'identity') +
     geom_smooth(color='black', method='lm') +
     labs(x="Qtd. de ligações", y="% de aceites")
 ```
 
-No gráfico, vemos que há uma tendência de quem recebe menos ligações, fechar mais contratos. Isso é confirmado pela correlação de pearson entre número de ligações e taxas de aceite, que é negativa, com valor de `-0.7`.
+No gráfico, vemos que há uma tendência de quem recebe menos ligações, fechar mais contratos. Isso é confirmado pela correlação de pearson entre número de ligações e taxas de aceite, que é negativa, com valor de `-0.7`, indicando que a quantidade de ligações relaciona-se negativamente com a taxa de aceitação do produto.
 
 ```{r}
-cor.test(campaign.perc$campaign, campaign.perc$yes.perc)
+cor.test(campaign_y_ratios$by.column, campaign_y_ratios$yes.perc)
 ```
-
-Novamente para explicitar melhor as diferenças, 
-
-```{r}
-ggplot(campaign.perc[N >= 100]) + 
-    geom_bar(aes(x = campaign, y = scale(yes.perc)),stat = 'identity') +
-    labs(x="Qtd. de ligações", y="% de aceites (escalada pela média)")
-```
-
 
 ### Pergunta 3:
 
@@ -316,9 +282,7 @@ Assim confirmamos a tendência mostrada no teste anterior. Usuários que já ace
 
 #### Análise Preditiva
 
-No caso da análise preditiva, consideraremos uma variável relevante, se ela prevê corretamente o resultado da campanha atual. Para isso, compararemos tanto o impacto do da variável (poutcome) representando o resultado da campanha anterior quando comparado com outras variáveis, como comparar os resultados da campanha anterior entre si (success x failure).
-
-Para tal, construiremos novamente um modelo de Florestas aleatórias para nos permitir a análise do impacto das variáveis no resultado.
+No caso da análise preditiva, consideraremos uma variável relevante, se ela prevê corretamente o resultado da campanha atual. Para tal, construiremos novamente um modelo de Florestas aleatórias para nos permitir a análise do impacto de cada uma das variáveis no resultado.
 
 ##### Preprocessamento
 
@@ -396,10 +360,6 @@ best_rf <- function(X, y, metric_fun, n_estimators) {
 
 ```{r}
   metrics = import('sklearn.metrics')
-  X = 
-  y = 
-  metric_fun = 
-  n_estimators = 
   
   importance = rf_feature_importance(X=rf_bank[, 1:40], 
                                      y=rf_bank[, 41], 
@@ -412,7 +372,7 @@ best_rf <- function(X, y, metric_fun, n_estimators) {
 Removemos a feature de duração para melhor legibilidade do gráfico, já que ela, naturalmente é fortemente relacionada com o resultado, visto que pessoas que fecham negócio passam mais tempo para dar de conta dos detalhes.
 
 ```{r}
-ggplot(importances[feature!='duration']) +
+ggplot(importance[feature!='duration']) +
   geom_bar(aes(x=reorder(feature, -importance), y=importance), stat='identity') +
   labs(x='Variáveis', y='Escore de importância') +
   theme(axis.text.x = element_text(angle = 90, hjust = 1))
@@ -452,15 +412,15 @@ Abaixo destacamos as principais descobertas a partir do descrito:
 
 * Clientes com empréstimo imobiliário são mais novos do que clientes sem empréstimo, em média (38.8 anos x 43.1 anos).
 
-* Clientes com empréstimo imobiliário têm mais chances de serem trabalhadores de escritório, com 14% a mais desses trabalhadores em comparação a clientes sem empréstimo
+* Clientes com empréstimo imobiliário têm mais chances de serem trabalhadores braçais, com 14% a mais desses trabalhadores em comparação a clientes sem empréstimo.
 
-* Clientes com empréstimo imobiliário tem mais chances de possuírem educação secundária (10% a mais)
+* Clientes com empréstimo imobiliário tem mais chances de possuírem educação até o nível secundário (10% a mais), e menos chances de terem educação terciaria/superior (9% a menos), quando comparados a seus contrapartes.
 
 * Clientes com empréstimo imobiliário tem saldo bancário menor do que seus contrapartes, em média ($1175 x $1596)
 
 * Estes clientes têm uma quantidade de empréstimo levemente maior do que seus contrapartes (3% a mais)
 
-* Estranhamente, estes clientes tendem a receber mais ligações no mês de maio (40% a mais), e menos no mês de agosto(21% a menos), quando comparado com seus contrapartes.
+* Estes clientes receberam mais ligações no mês de maio (40% a mais), e menos no mês de agosto(21% a menos), quando comparado com seus contrapartes.
 
 * Finalmente estes clientes tendem a aceitar menos ofertas (9% a menos).
 
