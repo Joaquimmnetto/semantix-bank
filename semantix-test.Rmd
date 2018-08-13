@@ -200,19 +200,20 @@ Vendo os dados da pergunta anterior, grupos que recebem mais ligações ainda fe
 
 Como vimos acima, é recomendado contactar a maior quantidade de clientes possível, então devemos manter a quantidade média de ligações baixa. Ainda assim, isso nem sempre é algo plasível. Então, para estabelecer uma quantidade máxima de ligações, procuramos uma quantidade de ligações que apresente taxa de aceitação superior a média das taxas de aceitação entre os grupos de usuários analisados.
 
-Para realizar essa análise, construímos o gráfico abaixo. Ele mostra os mesmos dados do gráfico da pergunta anterior, mas agora com os valores do eixo y escaladas em razão da sua distância para a média. O valor 0 no eixo y representa a média, e cada unidade no dito eixo representa um desvio padrão. Vemos que 5 ligações é o último valor para o qual a porcentagem de aceites se mantêm acima da média. Com isso, estabelecemos 5 como um valor razoável para a quantidade máxima de ligações.
+Para realizar essa análise, construímos o gráfico abaixo. Ele mostra os mesmos dados do gráfico da pergunta anterior, mas agora com os valores do eixo y escaladas em razão da sua distância para a média. O valor 0 no eixo y representa a média, e cada unidade no dito eixo representa um desvio padrão. Vemos que 5 ligações é o último valor para o qual a porcentagem de aceites se mantêm acima da média, com um outro ponto simlar em 11 ligações, mas que devemos considerar como uma exceção, e não parte da regra. Com isso, estabelecemos 5 como um valor razoável para a quantidade máxima de ligações.
 
 
 ```{r}
-ggplot(campaign.perc[N >= 100]) + 
-    geom_bar(aes(x = campaign, y = scale(yes.perc)),stat = 'identity') +
+ggplot(campaign_y_ratios[N >= 100], aes(x = by.column, y = scale(yes.perc))) + 
+    geom_bar(stat = 'identity') +
     labs(x="Qtd. de ligações", y="% de aceites (escalada pela média)")
+
 ```
 
 Um detalhamento dos resultados obtidos para todos grupos analisados se encontra na tabela abaixo.
 
 ```{r}
-knitr::kable(setorder(campaign.perc[N >= 100], 'campaign'))
+knitr::kable(setorder(campaign_y_ratios[N >= 100,.(campaign = by.column, N, yes.perc, no.perc)], 'campaign'))
 ```
 
 ## Pergunta 4:
@@ -359,9 +360,9 @@ best_rf <- function(X, y, metric_fun, n_estimators) {
                                      metric_fun=metrics$precision_score)
 ```
 
-#### Resultados
+### Resultados
 
-Removemos a feature de duração para melhor legibilidade do gráfico, já que ela, naturalmente é fortemente relacionada com o resultado, visto que pessoas que fecham negócio passam mais tempo para dar de conta dos detalhes.
+Removemos a feature de duração do resultado da análise preditiva para melhor legibilidade do gráfico. Essa feature apresenta valor algo, e é naturalemente relacionada com o resultado, visto que pessoas que fecham negócio passam mais tempo para dar de conta dos detalhes. Com isso, temos os resultados de importância das features para predição abaixo.
 
 ```{r}
 ggplot(importance[feature!='duration']) +
@@ -370,19 +371,16 @@ ggplot(importance[feature!='duration']) +
   theme(axis.text.x = element_text(angle = 90, hjust = 1))
 ```
 
-Vemos que os principais fatores que influenciam o usuário são seu saldo atual, sua idade, e a data (mes/dia) do contato. Em uma escala menor, vemos que fatores como: quantidade de contatos (campaign), explorada na Pergunta 3; contatos anteriores em sucedidos (poutcome=sucess), e a quantidade de dias desde do último contato (pdays). Os dois ultimos são relacionados com a nossa pergunta, e juntamente com o descoberto na análise numérica  nos mostram que uma *quantidade menor de dias desde do último contato*, e principalmente *o fato de um usuário já ter aceitado uma campanha anterior* são relevantes no resultado da campanha atual.
+Vemos que os principais fatores que influenciam o usuário são seu saldo atual, sua idade, e a data (mes/dia) do contato. Em uma escala menor, vemos que fatores como: quantidade de contatos (campaign), explorada na Pergunta 3; contatos anteriores em sucedidos (poutcome=sucess), e a quantidade de dias desde do último contato (pdays). Os dois ultimos são relacionados com a nossa pergunta, confirmam o mostrado na análise numérica  nos mostrando que, das informações de campanhas anteriores uma *quantidade menor de dias desde do último contato*, e principalmente *o fato de um usuário já ter aceitado a última campanha* são relevantes no resultado da campanha atual.
 
 
 ## Pergunta 5:
 
 **Qual o fator determinante para que o banco exija um seguro de crédito?**
 
-Não temos nos dados informações disponíveis quanto a se o cliente pagou o empréstimo ou não, então não podemos dizer com precisão o risco gerado por esse cliente. Mas segundo o senso comum, acredita-se podemos usar as variáveis abaixo para indicar possíveis mau pagadores.
+Os dados não especificam para quais clientes o banco exigiu um seguro de crédito. Então temos que definir nos nossos dados o que significa um cliente não ser confiável, e que por consequência precisaria de um seguro de crédito. Poderíamos recomendar, com base no senso comum que clientes com crédito vencido (em _default_), e que possuem saldo bancário negativo não têm condições para confiavelmente pagar seus débitos, e então, necessitariam de seguro de crédito.
 
-* default: Um cliente com dívidas vencidas provavelmente tem dificuldades em pagar novas
-* balance: Clientes sem dinheiro acumulado (saldo negativo) também podem ter dificuldade para pagar dividas
-* housing, loan: Em conjunto com os outros campos, podemos indicar se um cliente têm dividas em excesso. Por exemplo, um cliente com um empresitmo pessoal e saldo negativo provavelmente está passando por dificuldades financeiras e não deve ser um bom pagador.
-
+Por outro lado, resultados derivados dessa definição não seriam sólidos, já que não temos uma fonte para, pelo menos empiricamente, dar base a essa definição. Então, por medida de segurança e para não incorrer em resultados duvidosos, prefiro levantar que não temos dados o suficiente para resolver essa questão.
 
 ## Pergunta 6:
 
