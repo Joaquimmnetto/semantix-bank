@@ -4,7 +4,7 @@
 install.packages('ggplot2')
 #Extensão do DataFrame do R, é considerávelmente mais rápido e poderoso
 install.packages('data.table')
-#Necessário para a execução do RandomForest
-install.packages('party')
+#Permite a execução de APIs python dentro do R. Utiliza a instância do python definida como padrão e necessita do python instalado.
+install.packages('reticulate')
 #Necessário para calcular a importância das variáveis usadas no RandomForest
 install.packages('varImp')

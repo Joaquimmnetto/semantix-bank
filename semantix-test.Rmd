@@ -7,8 +7,6 @@ output: html_document
 knitr::opts_chunk$set(echo = TRUE)
 require(ggplot2)
 require(data.table)
-# require(party)
-# require(varImp)
 require(reticulate)
 require(onehot)
 ```
