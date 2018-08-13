@@ -258,6 +258,7 @@ Aqui usaremos somente os valores 'failure' e 'success' de poutcome, já que eles
         decreasing = TRUE) * 100
 
 ```
+
 Aqui vemos que usuários que aceitaram a oferta nesta campanha tem muito mais chances de já terem a aceitado anteriormente, com 50% a mais de aceites anteriores por parte destes usuários. Realizaremos este experimento novamente, mas agora na 'direção oposta', ou seja, verificando a diferença de aceite atual baseado em aceites anteriores.
 
 ```{r}
@@ -268,7 +269,7 @@ Aqui vemos que usuários que aceitaram a oferta nesta campanha tem muito mais ch
 
 ```
 
-Assim confirmamos a tendência mostrada no teste anterior. Usuários que já aceitaram uma campanha anterior apresentam 52% a mais de aceite da campanha atual.
+Assim confirmamos a tendência mostrada no teste anterior. Usuários que já aceitaram uma campanha anterior apresentam 52% a mais de taxa de aceitação na campanha atual, quando comparados com usuários que não aceitaram a última campanha.
 
 
 ### Análise Preditiva
@@ -277,7 +278,7 @@ No caso da análise preditiva, consideraremos uma variável relevante, se ela pr
 
 ##### Preprocessamento
 
-Similarmente ao feito na pergunta 1, precisamos transformar nossas variáveis categóricas que não são ordernáveis para o formato 'onehot'. Transformaremos variáveis categóricas que são ordenáveis para inteiros.
+Para o random forest funcionar como o esperado, precisamos transformar nossas variáveis categóricas que não são ordernáveis para o formato 'onehot'. Transformaremos variáveis categóricas que são ordenáveis para inteiros.
 
 ```{r}
 rf_bank = copy(bank)
@@ -292,9 +293,9 @@ rf_bank$y = bank$y
 
 ##### Encontrando melhor modelo
 
-Nosso objetivo aqui não é encontrar um modelo viável para realizar previsões reais, mas sim encontrar o modelo com a melhor precisão para aceitação do empréstimo ('sim'), já que estamos buscando que profissões tendem a aceitar a oferta. O modelo escolhido poderá sofrer de _overfitting_, mas isso não é o problema, que que queremos que ele descreva nossos dados o mais precisamente possível.
+Nosso objetivo aqui não é encontrar um modelo viável para realizar previsões. O modelo escolhido poderá sofrer de _overfitting_, mas isso não é o problema, já que nosso objetivo que o modelo descreva nossos dados da forma mais completa possível.
 
-Para aliviar com o fato de que há um forte desbalanço nos nossos alvos de predição (coluna y), balancearemos a importância de cada classe ('yes' e 'no') pelo inverso da sua frequência. Para medir as métricas necessárias para comparação entre modelos, usaremos a técnica OOB, específica ao Random Forest.
+Para aliviar com o fato de que há um forte desbalanço nos nossos alvos de predição (coluna y), balancearemos a importância de cada classe ('yes' e 'no') pelo inverso da sua frequência. Isso é feito através do atributo `class_weight='balanced'` na inicialização do Random Forest. Para medir as métricas necessárias para comparação entre modelos, usaremos a técnica OOB, específica ao Random Forest.
 
 ```{r}
 
@@ -305,7 +306,7 @@ best_rf <- function(X, y, metric_fun, n_estimators) {
   oob_results = c()
   
   for(n_estimator in n_estimators) {
-    model = ensemble$RandomForestClassifier(n_estimators=as.integer(n_estimator), class_weight='balanced', oob_score=TRUE, random_state=as.integer(42))
+    model = ensemble$RandomForestClassifier(n_estimators=as.integer(n_estimator), class_weight='balanced', oob_score=TRUE)
     model = model$fit(X, as.matrix(y)[, 1])
     oob_decision = data.table(
                       apply(
@@ -335,7 +336,7 @@ best_rf <- function(X, y, metric_fun, n_estimators) {
     oob_metrics = best_rf(X, y, metric_fun, n_estimators)  
     
     opt_n_estimator = n_estimators[which.max(oob_metrics)]
-    model =  ensemble$RandomForestClassifier(n_estimators=as.integer(opt_n_estimator),   class_weight='balanced', random_state=as.integer(42))
+    model = ensemble$RandomForestClassifier(n_estimators=as.integer(opt_n_estimator),   class_weight='balanced')
     model$fit(X, as.matrix(y)[, 1])
     importances = model$feature_importances_
     
@@ -406,7 +407,7 @@ Abaixo destacamos as principais descobertas a partir do descrito:
 
 * Clientes com empréstimo imobiliário tem saldo bancário menor do que seus contrapartes, em média ($1175 x $1596)
 
-* Estes clientes têm uma quantidade de empréstimo levemente maior do que seus contrapartes (3% a mais)
+* Estes clientes têm uma quantidade de empréstimos pessoais levemente maior do que seus contrapartes (3% a mais)
 
 * Estes clientes receberam mais ligações no mês de maio (40% a mais), e menos no mês de agosto(21% a menos), quando comparado com seus contrapartes.
 
