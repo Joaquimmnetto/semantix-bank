@@ -60,7 +60,7 @@ bank = fread("datasets/bank-full.csv",
 * _poutcome_: resultado deste usuário na ultima campanha de marketing (categorical: "unknown","other","failure","success")
 
 
-## Resumo dos dados:
+## Análise geral dos dados:
 
 ```{r}
   summary(bank)
@@ -76,11 +76,11 @@ Não parece haver muitos outliers ou dados danificados, com a exceção de algum
 
 * previous: Possui um problema similar ao campo 'pdays', já que 'sem contato prévio' corresponde a 0.
 
-*y: Vemos que o desbalanceamento no campo representando nossa _label_ é bem significativo, com apenas 8.5% das entradas sendo 'yes', e o restante sendo 'no'.
+* y: Vemos que o desbalanceamento no campo representando nossa _label_ é bem significativo, com apenas 8.5% das entradas sendo 'yes', e o restante sendo 'no'.
 É importante que prestemos atenção nestes detalhes destes dados em análises futuras.
 
 
-### Pergunta 1:
+## Pergunta 1:
 
 **Qual profissão tem mais tendência a fazer um empréstimo? De qual tipo?**
 
@@ -160,7 +160,7 @@ bank$any_loan = NULL
 O resultado aqui é bastante similar aos empréstimos imobiliários, o que faz sentido, visto que entre empréstimos pessoais (16% do total) e imobiliários (55% do total) o segundo é bem mais frequente. Assim como nos empréstimos imobiliários, a proissão que mais realiza qualquer tipo de empréstimo é a de trabalhadores braçais, seguidos por trabalhadores de serviços, administradores, empresários e técnicos.
 
 
-### Pergunta 2:
+## Pergunta 2:
 
 **Fazendo uma relação entre número de contatos e sucesso da campanha quais
 são os pontos relevantes a serem observados?**
@@ -173,16 +173,9 @@ ggplot(bank) + geom_bar(aes(x = factor(campaign), fill = y), stat = 'count') +
              theme(axis.text.x = element_text(angle = 90, hjust = 1))
 ```
 
-Vemos que há grupos de clientes que foram contatados em grande quantidade. Contudo, eles representam um grupo muito pequeno. Esses grupos pequenos podem gerar _bias_ na análise, então, para evitar influência destes grupos na nossa análise, usaremos somente grupos que possuam ao menos 100 usuários. 
+No gráfico, os clientes são divididos de acordo com a quantidade de ligações recebida. Vemos que há grupos de clientes que foram contatados em grande quantidade. Contudo, estes grupos contêm uma quantidade muito pequena de clientes. Grupos com poucos dados que nem esse, podem não representar a população como um todo e acabam gerando _bias_ na análise. Então, para evitar influência destes grupos com poucos usuários na nossa análise, usaremos somente grupos que possuam 100 ou mais usuários. 
 
-```{r}
-campaign.perc = bank[, .(.N, 
-          yes.perc=sum(ifelse(y=='yes',1, 0))*100/.N, 
-          no.perc=sum(ifelse(y=='no',1, 0))*100/.N
-          ), by=.(campaign)]
-```
-
-Como resultado, o gráfico a seguir mostra o percentual de negócios fechados para diferentes quantidades de ligações recebidas. 
+Para analisar a efetividade da campanha em cada um destes grupos, veremos a taxa de négocios fechados para diferentes quantidades de ligações recebidas. Como resultado, temos o gráfico abaixo.
 
 ```{r}
 campaign_y_ratios = aggregate_ratios(bank, 'y', 'campaign')
@@ -192,21 +185,22 @@ ggplot(campaign_y_ratios[N >= 100], aes(x = by.column, y = yes.perc)) +
     labs(x="Qtd. de ligações", y="% de aceites")
 ```
 
-No gráfico, vemos que há uma tendência de quem recebe menos ligações, fechar mais contratos. Isso é confirmado pela correlação de pearson entre número de ligações e taxas de aceite, que é negativa, com valor de `-0.7`, indicando que a quantidade de ligações relaciona-se negativamente com a taxa de aceitação do produto.
+No gráfico, vemos que há uma tendência de grupos que recebem menos ligações, fecharem mais contratos. Isso é confirmado pela correlação de pearson entre número de ligações e taxas de aceite, que tem o valor de `-0.7`, indicando que a quantidade de ligações relaciona-se negativamente com a taxa de aceitação do produto.
 
 ```{r}
 cor.test(campaign_y_ratios$by.column, campaign_y_ratios$yes.perc)
 ```
 
-### Pergunta 3:
+## Pergunta 3:
 
 **Baseando-se nos resultados de adesão desta campanha qual o número médio e
 o máximo de ligações que você indica para otimizar a adesão?**
 
-Ainda baseado nos dados da pergunta anterior, as pessoas que recebem mais ligações ainda fecham contratos. Entretanto, estas ligações poderiam estar sendo utilizadas para ligar para outros potenciais clientes, que teriam mais chance de fechar contrato nas primeiras ligações. Então, a não ser em caso de exaustão de clientes viáveis, é interessante sempre tentar contactar novos clientes, com a média de ligações por cliente devendo ser próxima de 1.
+Vendo os dados da pergunta anterior, grupos que recebem mais ligações ainda fecham contratos, apesar de em uma taxa menor do que os que recebem mais. Entretanto, estas ligações poderiam estar sendo utilizadas para ligar para outros potenciais clientes, que teriam mais chance de fechar contrato nas primeiras ligações. Então, a não ser em caso de exaustão de clientes viáveis, é interessante sempre tentar contactar novos clientes, com a média de ligações por cliente devendo ser próxima de 1.
 
+Como vimos acima, é recomendado contactar a maior quantidade de clientes possível, então devemos manter a quantidade média de ligações baixa. Ainda assim, isso nem sempre é algo plasível. Então, para estabelecer uma quantidade máxima de ligações, procuramos uma quantidade de ligações que apresente taxa de aceitação superior a média das taxas de aceitação entre os grupos de usuários analisados.
 
-Como vimos acima, é recomendado contactar a maior quantidade de clientes possível, então devemos manter a quantidade média de ligações baixa. Para estabelecer uma quantidade máximo de ligações, construímos o gráfico abaixo. Ele mostra os mesmos dados do gráfico da pergunta anterior, mas agora com os valores do eixo y escaladas em razão da sua distância para a média. O valor 0 representa a média, e cada unidade representa um desvio padrão. Vemos que 5 ligações é o último valor para o qual a porcentagem de aceites se mantêm acima da média. Com isso, estabelecemos 5 como um valor razoável para a quantidade máxima de ligações.
+Para realizar essa análise, construímos o gráfico abaixo. Ele mostra os mesmos dados do gráfico da pergunta anterior, mas agora com os valores do eixo y escaladas em razão da sua distância para a média. O valor 0 no eixo y representa a média, e cada unidade no dito eixo representa um desvio padrão. Vemos que 5 ligações é o último valor para o qual a porcentagem de aceites se mantêm acima da média. Com isso, estabelecemos 5 como um valor razoável para a quantidade máxima de ligações.
 
 
 ```{r}
@@ -215,19 +209,17 @@ ggplot(campaign.perc[N >= 100]) +
     labs(x="Qtd. de ligações", y="% de aceites (escalada pela média)")
 ```
 
-Um melhor detalhamento dos resultados obtidos se encontra na tabela abaixo.
-
+Um detalhamento dos resultados obtidos para todos grupos analisados se encontra na tabela abaixo.
 
 ```{r}
 knitr::kable(setorder(campaign.perc[N >= 100], 'campaign'))
 ```
 
-
-### Pergunta 4:
+## Pergunta 4:
 
 **O resultado da campanha anterior tem relevância na campanha atual?**
 
-#### Análise numérica
+### Análise numérica
 
 Para respondermos essa pergunta, primeiro precisamos definir o que é relevância. Definieremos que alguma variável relacionada a campanha anterior é relevante se ela impactar de maneira significativa o resultado da campanha atual. Para determinarmos se esse impacto existe, relacionaremos as variáveis associadas a campanha anterior (pdays, previous, poutcome), com o resultado da campanha atual (y).
 
@@ -280,7 +272,7 @@ Aqui vemos que usuários que aceitaram a oferta nesta campanha tem muito mais ch
 Assim confirmamos a tendência mostrada no teste anterior. Usuários que já aceitaram uma campanha anterior apresentam 52% a mais de aceite da campanha atual.
 
 
-#### Análise Preditiva
+### Análise Preditiva
 
 No caso da análise preditiva, consideraremos uma variável relevante, se ela prevê corretamente o resultado da campanha atual. Para tal, construiremos novamente um modelo de Florestas aleatórias para nos permitir a análise do impacto de cada uma das variáveis no resultado.
 
@@ -381,7 +373,7 @@ ggplot(importance[feature!='duration']) +
 Vemos que os principais fatores que influenciam o usuário são seu saldo atual, sua idade, e a data (mes/dia) do contato. Em uma escala menor, vemos que fatores como: quantidade de contatos (campaign), explorada na Pergunta 3; contatos anteriores em sucedidos (poutcome=sucess), e a quantidade de dias desde do último contato (pdays). Os dois ultimos são relacionados com a nossa pergunta, e juntamente com o descoberto na análise numérica  nos mostram que uma *quantidade menor de dias desde do último contato*, e principalmente *o fato de um usuário já ter aceitado uma campanha anterior* são relevantes no resultado da campanha atual.
 
 
-### Pergunta 5:
+## Pergunta 5:
 
 **Qual o fator determinante para que o banco exija um seguro de crédito?**
 
@@ -392,7 +384,7 @@ Não temos nos dados informações disponíveis quanto a se o cliente pagou o em
 * housing, loan: Em conjunto com os outros campos, podemos indicar se um cliente têm dividas em excesso. Por exemplo, um cliente com um empresitmo pessoal e saldo negativo provavelmente está passando por dificuldades financeiras e não deve ser um bom pagador.
 
 
-### Pergunta 6:
+## Pergunta 6:
 
 **Quais são as características mais proeminentes de um cliente que possua
 empréstimo imobiliário?**
